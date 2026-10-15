@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="ko" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Virtual Try-On & Pose Director Studio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Noto Sans KR"', 'Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        studio: {
+                            950: '#09090b',
+                            900: '#121216',
+                            850: '#1a1a22',
+                            800: '#24242f',
+                            700: '#323242',
+                            accent: '#7c3aed',
+                            accentHover: '#6d28d9'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #09090b;
+            color: #f4f4f5;
+            overflow-x: hidden;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #121216;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #323242;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4f46e5;
+        }
+        .chip-active {
+            background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+            border-color: #8b5cf6;
+            color: white;
+            box-shadow: 0 4px 12px rgba(124, 58, 237, 0.35);
+        }
+        .canvas-grid {
+            background-image: radial-gradient(#27272a 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        @keyframes pulse-border {
+            0%, 100% { border-color: rgba(124, 58, 237, 0.5); }
+            50% { border-color: rgba(236, 72, 153, 0.8); }
+        }
+        .loading-glow {
+            animation: pulse-border 2s infinite;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col font-sans antialiased selection:bg-purple-600 selection:text-white">
+
+    <header class="h-16 border-b border-zinc-800/80 bg-studio-900/90 backdrop-blur-md sticky top-0 z-30 px-4 lg:px-6 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-purple-600/20">
+                <i data-lucide="sparkles" class="w-5 h-5 text-white"></i>
+            </div>
+            <div>
+                <div class="flex items-center gap-2">
+                    <h1 class="text-base sm:text-lg font-bold tracking-tight bg-gradient-to-r from-white via-zinc-200 to-purple-300 bg-clip-text text-transparent">
+                        V-TRYON & POSE STUDIO
+                    </h1>
+                    <span class="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                        AI 합성 스튜디오
+                    </span>
+                </div>
+                <p class="text-xs text-zinc-400 hidden sm:block">입력된 에셋 기반 정밀 의상 피팅 및 40+ 카메라/포즈/표정 디렉팅</p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2 sm:gap-3">
+            <!-- Aspect Ratio Selector -->
+            <div class="flex items-center bg-studio-850 border border-zinc-800 rounded-lg p-1 text-xs">
+                <span class="px-2 text-zinc-400 hidden md:inline">비율:</span>
+                <button onclick="setAspectRatio('3:4')" id="ratio-3:4" class="ratio-btn px-2.5 py-1 rounded-md font-medium bg-purple-600 text-white transition">3:4 화보</button>
+                <button onclick="setAspectRatio('1:1')" id="ratio-1:1" class="ratio-btn px-2.5 py-1 rounded-md font-medium text-zinc-400 hover:text-white transition">1:1 정방형</button>
+                <button onclick="setAspectRatio('9:16')" id="ratio-9:16" class="ratio-btn px-2.5 py-1 rounded-md font-medium text-zinc-400 hover:text-white transition">9:16 전신</button>
+                <button onclick="setAspectRatio('16:9')" id="ratio-16:9" class="ratio-btn px-2.5 py-1 rounded-md font-medium text-zinc-400 hover:text-white transition">16:9 와이드</button>
+            </div>
+
+            <button onclick="loadSamplePresets()" class="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium flex items-center gap-1.5 transition border border-zinc-700" title="빠른 테스트를 위해 샘플 이미지를 자동으로 채웁니다">
+                <i data-lucide="wand-2" class="w-3.5 h-3.5 text-purple-400"></i>
+                <span class="hidden sm:inline">샘플 자동채우기</span>
+            </button>
+
+            <button onclick="resetAllInputs()" class="p-2 rounded-lg bg-zinc-800/70 hover:bg-red-950/60 hover:text-red-300 text-zinc-400 text-xs transition border border-zinc-800" title="모든 입력 초기화">
+                <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 p-4 lg:p-5 max-w-[1920px] w-full mx-auto">
+        
+        <!-- LEFT COLUMN: 4 Core Asset Inputs (Person, Garment, Pose, Background) -->
+        <section class="lg:col-span-3 flex flex-col gap-3 bg-studio-900 border border-zinc-800/90 rounded-2xl p-4 shadow-xl">
+            <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <div class="flex items-center gap-2">
+                    <span class="w-6 h-6 rounded-full bg-purple-600/20 border border-purple-500/40 text-purple-300 text-xs font-bold flex items-center justify-center">1</span>
+                    <h2 class="font-semibold text-sm text-zinc-100">합성 재료 넣기 (입력 전용)</h2>
+                </div>
+                <span class="text-[11px] text-zinc-400" id="active-input-count">0/4 입력됨</span>
+            </div>
+
+            <p class="text-xs text-zinc-400 leading-relaxed bg-zinc-950/60 p-2.5 rounded-xl border border-zinc-800/80">
+                <i data-lucide="info" class="w-3.5 h-3.5 inline text-purple-400 mr-1 -mt-0.5"></i>
+                넣어주신 항목들만 엄격하게 조합하여 합성합니다. 비워둔 항목은 기본 스튜디오 설정이나 원본을 유지합니다.
+            </p>
+
+            <!-- 4 Input Cards Grid -->
+            <div class="grid grid-cols-2 lg:grid-cols-1 gap-3 flex-1 overflow-y-auto pr-1">
+                
+                <!-- 1. 인물 넣기 (Person) -->
+                <div class="bg-studio-850 border border-zinc-800 rounded-xl p-3 flex flex-col gap-2 transition hover:border-zinc-700" id="card-person">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-1.5">
+                            <i data-lucide="user" class="w-4 h-4 text-purple-400"></i>
+                            <span class="text-xs font-semibold text-zinc-200">1. 인물 넣기</span>
+                        </div>
+                        <button onclick="clearSlot('person')" id="clear-person" class="hidden text-[11px] text-red-400 hover:underline">비우기</button>
+                    </div>
+                    
+                    <label class="relative group cursor-pointer w-full h-28 rounded-lg border-2 border-dashed border-zinc-700 hover:border-purple-500 bg-zinc-900/60 flex flex-col items-center justify-center overflow-hidden transition">
+                        <input type="file" accept="image/*" class="hidden" onchange="handleFileUpload(event, 'person')">
+                        <img id="preview-person" class="hidden w-full h-full object-cover" alt="인물 미리보기">
+                        <div id="placeholder-person" class="flex flex-col items-center text-center p-2">
+                            <i data-lucide="upload-cloud" class="w-5 h-5 text-zinc-400 group-hover:text-purple-400 mb-1 transition"></i>
+                            <span class="text-[11px] text-zinc-300 font-medium">인물 사진 업로드</span>
+                            <span class="text-[10px] text-zinc-500">얼굴/체형 기준 모델</span>
+                        </div>
+                    </label>
+                    <input type="text" id="desc-person" oninput="updateInputCount()" placeholder="또는 인물 설명 (예: 20대 한국 여성 모델, 단발머리)" class="w-full px-2.5 py-1.5 text-xs bg-zinc-900 border border-zinc-800 rounded-lg focus:outline-none focus:border-purple-500 text-zinc-200 placeholder-zinc-500">
+                </div>
+
+                <!-- 2. 의상 넣기 (Garment) -->
+                <div class="bg-studio-850 border border-zinc-800 rounded-xl p-3 flex flex-col gap-2 transition hover:border-zinc-700" id="card-garment">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-1.5">
+                            <i data-lucide="shirt" class="w-4 h-4 text-pink-400"></i>
+                            <span class="text-xs font-semibold text-zinc-200">2. 의상 넣기 (Try-On)</span>
+                        </div>
+                        <button onclick="clearSlot('garment')" id="clear-garment" class="hidden text-[11px] text-red-400 hover:underline">비우기</button>
+                    </div>
+                    
+                    <label class="relative group cursor-pointer w-full h-28 rounded-lg border-2 border-dashed border-zinc-700 hover:border-pink-500 bg-zinc-900/60 flex flex-col items-center justify-center overflow-hidden transition">
+                        <input type="file" accept="image/*" class="hidden" onchange="handleFileUpload(event, 'garment')">
+                        <img id="preview-garment" class="hidden w-full h-full object-cover" alt="의상 미리보기">
+                        <div id="placeholder-garment" class="flex flex-col items-center text-center p-2">
+                            <i data-lucide="upload-cloud" class="w-5 h-5 text-zinc-400 group-hover:text-pink-400 mb-1 transition"></i>
+                            <span class="text-[11px] text-zinc-300 font-medium">입힐 의상 사진 업로드</span>
+                            <span class="text-[10px] text-zinc-500">상의/하의/원피스/아우터</span>
+                        </div>
+                    </label>
+                    <input type="text" id="desc-garment" oninput="updateInputCount()" placeholder="또는 의상 설명 (예: 오버핏 블랙 가죽 자켓과 청바지)" class="w-full px-2.5 py-1.5 text-xs bg-zinc-900 border border-zinc-800 rounded-lg focus:outline-none focus:border-pink-500 text-zinc-200 placeholder-zinc-500">
+                </div>
+
+                <!-- 3. 포즈 동작 넣기 (Pose Reference) -->
+                <div class="bg-studio-850 border border-zinc-800 rounded-xl p-3 flex flex-col gap-2 transition hover:border-zinc-700" id="card-pose">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-1.5">
+                            <i data-lucide="person-standing" class="w-4 h-4 text-emerald-400"></i>
+                            <span class="text-xs font-semibold text-zinc-200">3. 포즈 동작 넣기</span>
+                        </div>
+                        <button onclick="clearSlot('pose')" id="clear-pose" class="hidden text-[11px] text-red-400 hover:underline">비우기</button>
+                    </div>
+                    
+                    <label class="relative group cursor-pointer w-full h-24 rounded-lg border-2 border-dashed border-zinc-700 hover:border-emerald-500 bg-zinc-900/60 flex flex-col items-center justify-center overflow-hidden transition">
+                        <input type="file" accept="image/*" class="hidden" onchange="handleFileUpload(event, 'pose')">
+                        <img id="preview-pose" class="hidden w-full h-full object-cover" alt="포즈 미리보기">
+                        <div id="placeholder-pose" class="flex flex-col items-center text-center p-2">
+                            <i data-lucide="upload-cloud" class="w-5 h-5 text-zinc-400 group-hover:text-emerald-400 mb-1 transition"></i>
+                            <span class="text-[11px] text-zinc-300 font-medium">포즈 참고 이미지 업로드</span>
+                            <span class="text-[10px] text-zinc-500">따라할 동작/실루엣</span>
+                        </div>
+                    </label>
+                    <input type="text" id="desc-pose" oninput="updateInputCount()" placeholder="또는 초기 동작 (예: 주머니에 손 넣고 걷기)" class="w-full px-2.5 py-1.5 text-xs bg-zinc-900 border border-zinc-800 rounded-lg focus:outline-none focus:border-emerald-500 text-zinc-200 placeholder-zinc-500">
+                </div>
+
+                <!-- 4. 배경 넣기 (Background) -->
+                <div class="bg-studio-850 border border-zinc-800 rounded-xl p-3 flex flex-col gap-2 transition hover:border-zinc-700" id="card-background">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-1.5">
+                            <i data-lucide="image" class="w-4 h-4 text-amber-400"></i>
+                            <span class="text-xs font-semibold text-zinc-200">4. 배경 넣기</span>
+                        </div>
+                        <button onclick="clearSlot('background')" id="clear-background" class="hidden text-[11px] text-red-400 hover:underline">비우기</button>
+                    </div>
+                    
+                    <label class="relative group cursor-pointer w-full h-24 rounded-lg border-2 border-dashed border-zinc-700 hover:border-amber-500 bg-zinc-900/60 flex flex-col items-center justify-center overflow-hidden transition">
+                        <input type="file" accept="image/*" class="hidden" onchange="handleFileUpload(event, 'background')">
+                        <img id="preview-background" class="hidden w-full h-full object-cover" alt="배경 미리보기">
+                        <div id="placeholder-background" class="flex flex-col items-center text-center p-2">
+                            <i data-lucide="upload-cloud" class="w-5 h-5 text-zinc-400 group-hover:text-amber-400 mb-1 transition"></i>
+                            <span class="text-[11px] text-zinc-300 font-medium">배경 장소 이미지 업로드</span>
+                            <span class="text-[10px] text-zinc-500">미입력 시 심플 스튜디오 배경</span>
+                        </div>
+                    </label>
+                    <input type="text" id="desc-background" oninput="updateInputCount()" placeholder="또는 배경 설명 (예: 서울 성수동 카페 거리, 자연광)" class="w-full px-2.5 py-1.5 text-xs bg-zinc-900 border border-zinc-800 rounded-lg focus:outline-none focus:border-amber-500 text-zinc-200 placeholder-zinc-500">
+                </div>
+
+            </div>
+
+            <!-- Primary Synthesis Button -->
+            <button onclick="runSynthesis('initial')" id="btn-synthesize" class="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold text-sm shadow-lg shadow-purple-600/30 flex items-center justify-center gap-2 transition transform active:scale-[0.99]">
+                <i data-lucide="layers" class="w-4 h-4"></i>
+                <span>입력된 재료로 Try-On 합성하기</span>
+            </button>
+        </section>
+
+        <!-- CENTER COLUMN: Main Viewport & History Drawer -->
+        <section class="lg:col-span-5 flex flex-col gap-4">
+            
+            <!-- Main Result Canvas Card -->
+            <div class="flex-1 bg-studio-900 border border-zinc-800/90 rounded-2xl p-4 flex flex-col shadow-xl min-h-[460px]">
+                <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-zinc-800">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <h2 class="font-semibold text-sm text-zinc-100">프리뷰 모니터</h2>
+                        <span id="current-status-badge" class="text-[11px] px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-300">대기 중</span>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <button onclick="downloadCurrentImage()" id="btn-download-single" disabled class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 disabled:pointer-events-none text-xs font-medium text-zinc-200 flex items-center gap-1.5 transition border border-zinc-700">
+                            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                            <span>현재 이미지 저장</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Active Recipe Tags Bar -->
+                <div id="active-recipe-bar" class="flex flex-wrap items-center gap-1.5 py-2.5 text-[11px] border-b border-zinc-800/60">
+                    <span class="text-zinc-500">적용된 디렉팅:</span>
+                    <span id="tag-shot" class="px-2 py-0.5 rounded bg-purple-950/80 border border-purple-700/50 text-purple-300">기본 범위</span>
+                    <span id="tag-angle" class="px-2 py-0.5 rounded bg-indigo-950/80 border border-indigo-700/50 text-indigo-300">기본 각도</span>
+                    <span id="tag-pose" class="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-700/50 text-emerald-300">기본 포즈</span>
+                    <span id="tag-expr" class="px-2 py-0.5 rounded bg-pink-950/80 border border-pink-700/50 text-pink-300">기본 표정</span>
+                </div>
+
+                <!-- Image Stage -->
+                <div class="relative flex-1 my-3 rounded-xl canvas-grid border border-zinc-800/80 flex items-center justify-center overflow-hidden min-h-[360px]" id="stage-container">
+                    
+                    <!-- Empty State -->
+                    <div id="stage-empty" class="flex flex-col items-center text-center max-w-sm p-6">
+                        <div class="w-16 h-16 rounded-2xl bg-zinc-800/80 border border-zinc-700 flex items-center justify-center mb-4 text-purple-400">
+                            <i data-lucide="camera" class="w-8 h-8"></i>
+                        </div>
+                        <h3 class="text-base font-bold text-zinc-200 mb-1">합성할 재료를 넣고 시작하세요</h3>
+                        <p class="text-xs text-zinc-400 leading-relaxed mb-4">
+                            좌측에서 <b>인물, 의상, 포즈, 배경</b> 중 원하는 항목을 넣은 뒤 <b>[Try-On 합성하기]</b>를 누르면 AI가 의상을 입히고 장면을 합성합니다.<br>
+                            합성 후 우측 패널에서 <b>46가지 카메라/포즈/표정</b>을 바꿔가며 연속 촬영할 수 있습니다.
+                        </p>
+                        <button onclick="loadSamplePresets()" class="px-4 py-2 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40 text-xs font-semibold flex items-center gap-1.5 transition">
+                            <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                            샘플 에셋으로 즉시 체험해보기
+                        </button>
+                    </div>
+
+                    <!-- Result Image -->
+                    <img id="stage-image" class="hidden max-h-[520px] w-auto h-auto object-contain rounded-lg shadow-2xl transition-all duration-300" alt="합성 결과물">
+
+                    <!-- Loading Overlay -->
+                    <div id="stage-loading" class="hidden absolute inset-0 bg-zinc-950/85 backdrop-blur-md flex flex-col items-center justify-center p-6 z-20">
+                        <div class="relative w-16 h-16 mb-4">
+                            <div class="w-16 h-16 rounded-full border-4 border-purple-500/20 border-t-purple-500 animate-spin"></div>
+                            <i data-lucide="sparkles" class="w-6 h-6 text-purple-400 absolute inset-0 m-auto animate-pulse"></i>
+                        </div>
+                        <p id="loading-title" class="text-sm font-bold text-white mb-1">AI 피팅 및 포즈 렌더링 중...</p>
+                        <p id="loading-subtitle" class="text-xs text-zinc-400 text-center max-w-xs">인물 특징과 의상 디테일을 유지하며 카메라 앵글과 포즈를 합성하고 있습니다.</p>
+                    </div>
+                </div>
+
+                <!-- Prompt / Detail Inspection Bar -->
+                <div class="bg-zinc-950/80 border border-zinc-800/80 rounded-xl p-2.5 flex items-center justify-between gap-2 text-xs">
+                    <div class="flex items-center gap-2 truncate">
+                        <i data-lucide="terminal" class="w-3.5 h-3.5 text-zinc-500 shrink-0"></i>
+                        <span id="last-prompt-summary" class="text-zinc-400 truncate">아직 생성된 작업이 없습니다.</span>
+                    </div>
+                    <label class="flex items-center gap-1.5 text-[11px] text-zinc-300 shrink-0 cursor-pointer select-none">
+                        <input type="checkbox" id="lock-consistency" checked class="rounded bg-zinc-800 border-zinc-700 text-purple-600 focus:ring-0">
+                        <span>직전 결과물에서 의상/인물 고정하기</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- History & Batch ZIP Download Section -->
+            <div class="bg-studio-900 border border-zinc-800/90 rounded-2xl p-4 shadow-xl">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="history" class="w-4 h-4 text-purple-400"></i>
+                        <h3 class="font-semibold text-sm text-zinc-100">촬영 히스토리 보관함</h3>
+                        <span id="history-count-badge" class="text-xs px-2 py-0.5 rounded-full bg-purple-600/20 text-purple-300 border border-purple-500/30 font-semibold">0장</span>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <button onclick="downloadAllAsZip()" id="btn-download-zip" disabled class="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 disabled:pointer-events-none text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-900/30 transition">
+                            <i data-lucide="folder-archive" class="w-3.5 h-3.5"></i>
+                            <span>전체 일괄 다운로드 (ZIP)</span>
+                        </button>
+                        <button onclick="clearHistory()" id="btn-clear-history" disabled class="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-red-950/60 hover:text-red-300 disabled:opacity-40 disabled:pointer-events-none text-zinc-400 text-xs transition border border-zinc-700">
+                            비우기
+                        </button>
+                    </div>
+                </div>
+
+                <!-- History Thumbnails Horizontal Scroll -->
+                <div id="history-list" class="flex items-center gap-3 overflow-x-auto pb-2 min-h-[108px]">
+                    <div id="history-empty" class="w-full py-6 text-center text-xs text-zinc-500 border border-dashed border-zinc-800 rounded-xl">
+                        합성하거나 포즈를 변경한 모든 결과물이 이곳에 자동으로 저장됩니다.
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- RIGHT COLUMN: Post-Synthesis Camera, Angle, Pose & Expression Controls (10+ Each) -->
+        <section class="lg:col-span-4 flex flex-col gap-3 bg-studio-900 border border-zinc-800/90 rounded-2xl p-4 shadow-xl">
+            <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <div class="flex items-center gap-2">
+                    <span class="w-6 h-6 rounded-full bg-pink-600/20 border border-pink-500/40 text-pink-300 text-xs font-bold flex items-center justify-center">2</span>
+                    <div>
+                        <h2 class="font-semibold text-sm text-zinc-100">합성 후 포즈 & 카메라 디렉팅</h2>
+                    </div>
+                </div>
+                <button onclick="randomizeDirectorOptions()" class="text-xs px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-purple-300 flex items-center gap-1 border border-zinc-700 transition">
+                    <i data-lucide="shuffle" class="w-3 h-3"></i>
+                    <span>랜덤 추천</span>
+                </button>
+            </div>
+
+            <!-- Category Tabs -->
+            <div class="grid grid-cols-4 gap-1 bg-studio-950 p-1 rounded-xl border border-zinc-800">
+                <button onclick="switchDirectorTab('shot')" id="tab-btn-shot" class="director-tab-btn py-2 px-1 rounded-lg text-xs font-semibold bg-purple-600 text-white transition flex flex-col items-center gap-1">
+                    <i data-lucide="frame" class="w-3.5 h-3.5"></i>
+                    <span>카메라 범위 <b class="text-[10px] opacity-80">(12)</b></span>
+                </button>
+                <button onclick="switchDirectorTab('angle')" id="tab-btn-angle" class="director-tab-btn py-2 px-1 rounded-lg text-xs font-semibold text-zinc-400 hover:text-white transition flex flex-col items-center gap-1">
+                    <i data-lucide="compass" class="w-3.5 h-3.5"></i>
+                    <span>카메라 각도 <b class="text-[10px] opacity-80">(12)</b></span>
+                </button>
+                <button onclick="switchDirectorTab('pose')" id="tab-btn-pose" class="director-tab-btn py-2 px-1 rounded-lg text-xs font-semibold text-zinc-400 hover:text-white transition flex flex-col items-center gap-1">
+                    <i data-lucide="accessibility" class="w-3.5 h-3.5"></i>
+                    <span>포즈 동작 <b class="text-[10px] opacity-80">(14)</b></span>
+                </button>
+                <button onclick="switchDirectorTab('expr')" id="tab-btn-expr" class="director-tab-btn py-2 px-1 rounded-lg text-xs font-semibold text-zinc-400 hover:text-white transition flex flex-col items-center gap-1">
+                    <i data-lucide="smile-plus" class="w-3.5 h-3.5"></i>
+                    <span>표정/감정 <b class="text-[10px] opacity-80">(12)</b></span>
+                </button>
+            </div>
+
+            <!-- Options Container (Scrollable) -->
+            <div class="flex-1 overflow-y-auto pr-1 space-y-3 max-h-[450px]">
+                
+                <!-- 1. 카메라 범위 (Camera Shot Range - 12 items) -->
+                <div id="panel-shot" class="director-panel space-y-2">
+                    <div class="flex items-center justify-between text-xs text-zinc-400 px-1">
+                        <span>피사체가 프레임에 담기는 범위를 선택하세요 (12종)</span>
+                    </div>
+                    <div id="grid-shot" class="grid grid-cols-2 gap-2"></div>
+                </div>
+
+                <!-- 2. 카메라 각도 (Camera Angle - 12 items) -->
+                <div id="panel-angle" class="director-panel hidden space-y-2">
+                    <div class="flex items-center justify-between text-xs text-zinc-400 px-1">
+                        <span>카메라가 인물을 바라보는 각도를 선택하세요 (12종)</span>
+                    </div>
+                    <div id="grid-angle" class="grid grid-cols-2 gap-2"></div>
+                </div>
+
+                <!-- 3. 포즈 동작 (Pose Action - 14 items) -->
+                <div id="panel-pose" class="director-panel hidden space-y-2">
+                    <div class="flex items-center justify-between text-xs text-zinc-400 px-1">
+                        <span>합성된 인물이 취할 새로운 포즈를 선택하세요 (14종)</span>
+                    </div>
+                    <div id="grid-pose" class="grid grid-cols-2 gap-2"></div>
+                </div>
+
+                <!-- 4. 인물 표정 및 감정 (Expression & Emotion - 12 items) -->
+                <div id="panel-expr" class="director-panel hidden space-y-2">
+                    <div class="flex items-center justify-between text-xs text-zinc-400 px-1">
+                        <span>인물의 얼굴 표정과 감정 무드를 선택하세요 (12종)</span>
+                    </div>
+                    <div id="grid-expr" class="grid grid-cols-2 gap-2"></div>
+                </div>
+
+            </div>
+
+            <!-- Additional Custom Styling Detail -->
+            <div class="pt-2 border-t border-zinc-800 space-y-2">
+                <label class="block text-xs font-medium text-zinc-300">추가 디렉팅 메모 (선택)</label>
+                <input type="text" id="custom-director-note" placeholder="예: 바람에 머리카락이 살짝 날리는 느낌, 영화 같은 조명" class="w-full px-3 py-2 text-xs bg-zinc-950 border border-zinc-800 rounded-xl focus:outline-none focus:border-purple-500 text-zinc-200 placeholder-zinc-500">
+            </div>
+
+            <!-- Action Buttons for Post-Synthesis Re-shooting -->
+            <div class="grid grid-cols-1 gap-2 pt-1">
+                <button onclick="runSynthesis('reshoot')" id="btn-reshoot" class="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 hover:from-pink-500 hover:to-indigo-500 text-white font-bold text-sm shadow-lg shadow-pink-600/25 flex items-center justify-center gap-2 transition transform active:scale-[0.99]">
+                    <i data-lucide="camera" class="w-4 h-4"></i>
+                    <span>선택한 범위/각도/포즈/표정으로 재촬영 합성</span>
+                </button>
+            </div>
+        </section>
+    </main>
+
+    <!-- Toast Notification Message Box (No alert() allowed) -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4 sm:px-0"></div>
+
+    <script>
+        // API Configuration (Gemini 3.1 Flash Image / Nano Banana 2 for Multi-Modal Try-On & Pose Editing)
+        const apiKey = "";
+        const IMAGE_MODEL = "gemini-3.1-flash-image";
+
+        // 1. 카메라 범위 (Camera Shot Range - 12 options)
+        const CAMERA_SHOTS = [
+            { id: 'full_body', name: '전신 샷 (Full Body)', desc: '머리부터 발끝과 신발까지 전체 의상 표시', prompt: 'Full body shot showing the entire model from head to toe including shoes' },
+            { id: 'knee_shot', name: '니 샷 (Knee Shot)', desc: '무릎 위부터 머리까지 패션 룩북 구도', prompt: 'Knee shot (3/4 length portrait) framed from the knees up' },
+            { id: 'thigh_shot', name: '카우보이 샷 ( 허벅지 )', desc: '허벅지 중간부터 상반신 강조', prompt: 'American cowboy shot framed from mid-thigh up' },
+            { id: 'waist_shot', name: '미디엄 샷 (Waist Shot)', desc: '허리선부터 상체 의상 핏 집중', prompt: 'Medium waist shot framed from the waist up focusing on upper body fit' },
+            { id: 'bust_shot', name: '바스트 샷 (Bust Shot)', desc: '가슴선 위부터 얼굴과 상의 네크라인 강조', prompt: 'Medium close-up bust shot from chest up highlighting neckline and face' },
+            { id: 'close_up', name: '클로즈업 (Close-Up)', desc: '얼굴 표정과 칼라/어깨 디테일 집중', prompt: 'Close-up portrait focusing on the face, collar, and shoulder details' },
+            { id: 'extreme_closeup', name: '익스트림 클로즈업', desc: '눈빛과 감정, 액세서리/원단 질감 극대화', prompt: 'Extreme close-up focusing tightly on facial expression and fabric texture near face' },
+            { id: 'wide_env', name: '와이드 환경 샷 (Wide)', desc: '배경 공간감과 전신 실루엣이 어우러진 샷', prompt: 'Wide environmental fashion shot showing full figure within expansive background' },
+            { id: 'extreme_wide', name: '익스트림 롱 샷 (Long)', desc: '풍경 속 모델의 전체적인 무드 강조', prompt: 'Extreme wide long-distance cinematic shot with the model placed artistically in the scene' },
+            { id: 'upper_detail', name: '상의 디테일 포커스', desc: '상의 핏과 레이어드 디테일 중심 구도', prompt: 'Upper garment focus shot framing from hips to top of head emphasizing jacket/top drape' },
+            { id: 'lower_detail', name: '하의 & 슈즈 포커스', desc: '허리부터 바지/스커트 핏과 신발 중심', prompt: 'Lower body fashion framing emphasizing trousers/skirt silhouette down to footwear' },
+            { id: 'editorial_crop', name: '매거진 에디토리얼 프레임', desc: '패션 잡지 표지 스타일의 세련된 여백 구도', prompt: 'High-fashion magazine cover framing with balanced headroom and editorial composition' }
+        ];
+
+        // 2. 카메라 각도 (Camera Angles - 12 options)
+        const CAMERA_ANGLES = [
+            { id: 'eye_level', name: '아이 레벨 (정면 눈높이)', desc: '가장 자연스럽고 왜곡 없는 표준 눈높이', prompt: 'Eye-level straight-on camera angle' },
+            { id: 'low_angle', name: '로우 앵글 (아래에서 위로)', desc: '비율이 길어 보이고 당당해 보이는 각도', prompt: 'Low-angle shot looking up at the model for elongated proportions and powerful presence' },
+            { id: 'high_angle', name: '하이 앵글 (위에서 아래로)', desc: '트렌디한 Y2K 감성 및 입체적인 구도', prompt: 'High-angle shot looking down from above at the model' },
+            { id: ' worm_eye', name: '익스트림 로우 (지면 앵글)', desc: '바닥 근처에서 올려다보는 역동적인 화보 앵글', prompt: 'Dramatic ultra-low ground-level worm-eye perspective looking sharply upward' },
+            { id: 'birds_eye', name: '버드아이 뷰 (탑다운 오버헤드)', desc: '머리 바로 위 수직에서 내려다보는 각도', prompt: 'Overhead bird-eye top-down view looking directly down at the model' },
+            { id: 'three_quarter_left', name: '좌측 45도 얼짱 각도', desc: '입체감이 살아나는 좌측 3/4 측면 앵글', prompt: 'Three-quarter (45-degree) camera angle from the front-left side' },
+            { id: 'three_quarter_right', name: '우측 45도 측면 각도', desc: '자연스러운 깊이감의 우측 3/4 측면 앵글', prompt: 'Three-quarter (45-degree) camera angle from the front-right side' },
+            { id: 'side_profile', name: '완전 측면 (Side Profile)', desc: '옆모습 라인과 의상 옆 실루엣을 강조', prompt: '90-degree pure side profile camera angle capturing the side silhouette' },
+            { id: 'over_shoulder', name: '오버 더 숄더 (어깨 너머)', desc: '등/어깨 너머로 돌아보는 영화 같은 구도', prompt: 'Over-the-shoulder angle looking from behind the shoulder as the model glances back' },
+            { id: 'dutch_tilt', name: '더치 앵글 (사선 틸트)', desc: '카메라를 살짝 기울여 역동적인 스트릿 감성 연출', prompt: 'Dynamic Dutch tilt angle with a stylish diagonal camera horizon' },
+            { id: 'back_three_quarter', name: '후면 3/4 뒤태 앵글', desc: '의상 뒷모습 디테일과 돌아보는 얼굴 동시 표현', prompt: 'Rear three-quarter angle showcasing the back design of the outfit while model turns head toward camera' },
+            { id: 'fisheye_perspective', name: '광각 다이나믹 원근감', desc: '근접 광각 렌즈 특유의 입체적이고 힙한 왜곡감', prompt: '20mm wide-angle lens perspective creating trendy dynamic depth' }
+        ];
+
+        // 3. 포즈 동작 (Poses - 14 diverse options)
+        const POSES = [
+            { id: 'confident_stand', name: '당당한 정면 스탠딩', desc: '짝다리로 체중을 한쪽 발에 실은 모델 기본 포즈', prompt: 'Standing confidently with weight shifted to one hip in a classic fashion model stance' },
+            { id: 'runway_walk', name: '런웨이 워킹 (걷는 동작)', desc: '자연스럽게 앞으로 걸어 나오며 옷자락이 흔들리는 포즈', prompt: 'Mid-stride runway walking forward naturally with subtle movement in the clothing' },
+            { id: 'hands_in_pocket', name: '주머니에 손 넣기', desc: '시크하고 여유롭게 양손 또는 한 손을 주머니에 넣은 포즈', prompt: 'Casually standing with hands tucked into pockets, relaxed shoulders' },
+            { id: 'arms_crossed', name: '팔짱 끼기 (Arms Crossed)', desc: '프로페셔널하고 지적인 느낌의 팔짱 포즈', prompt: 'Posing with arms neatly crossed over the chest in a poised manner' },
+            { id: 'sitting_stool', name: '스튜디오 스툴에 앉기', desc: '다리를 꼬거나 뻗고 의자에 멋스럽게 앉은 포즈', prompt: 'Sitting stylishly on a minimalist studio stool/chair with relaxed posture' },
+            { id: 'leaning_wall', name: '벽에 기대어 서기', desc: '한쪽 어깨나 등을 기대어 서 있는 화보 포즈', prompt: 'Leaning casually against a surface with one leg slightly bent' },
+            { id: 'look_back_turn', name: '뒤돌아보며 시선 주기', desc: '걸어가다 뒤를 돌아보며 카메라를 응시하는 동작', prompt: 'Turning back over the shoulder toward the camera mid-motion' },
+            { id: 'hand_in_hair', name: '머리카락 쓸어올리기', desc: '한 손으로 자연스럽게 머리를 넘기는 매력적인 동작', prompt: 'Raising one hand gracefully to brush or touch hair while posing' },
+            { id: 'adjust_collar', name: '옷깃/소매 정돈하기', desc: '자켓 옷깃이나 소매를 잡으며 의상을 돋보이게 하는 포즈', prompt: 'Holding or adjusting the jacket lapel/collar stylishly to highlight the outfit' },
+            { id: 'street_crouch', name: '스트릿 힙 크라우치 (앉아 찍기)', desc: '한쪽 무릎을 굽혀 낮게 앉은 힙한 스트릿 포즈', prompt: 'Trendy street-fashion crouching/squatting pose with elbows resting on knees' },
+            { id: 'dynamic_jump', name: '역동적인 점프/모션', desc: '공중으로 가볍게 도약하거나 회전하는 생동감 넘치는 포즈', prompt: 'Dynamic mid-air fashion jump / twirl with energetic body movement and flowing fabric' },
+            { id: 'chin_rest', name: '턱 괴기 / 얼굴 손 포인트', desc: '손끝을 턱이나 볼 근처에 대어 시선을 집중시키는 포즈', prompt: 'Posing with one hand delicately resting near the chin/jawline' },
+            { id: 'hands_on_waist', name: '양손 허리 짚기 (파워 포즈)', desc: '의상 실루엣과 허리 라인을 강조하는 하이패션 포즈', prompt: 'High-fashion power pose with hands placed firmly on the waist/hips, elbows out' },
+            { id: 'floor_sit', name: '바닥에 편하게 앉기', desc: '바닥에 앉아 다리를 자연스럽게 뻗은 감성 룩북 포즈', prompt: 'Sitting comfortably on the floor with legs extended artistically in an editorial pose' }
+        ];
+
+        // 4. 인물 표정 및 감정 (Expressions & Emotions - 12 options)
+        const EXPRESSIONS = [
+            { id: 'natural_smile', name: '자연스러운 미소', desc: '부드럽고 호감 가는 온화한 미소', prompt: 'Soft, warm, natural pleasant smile' },
+            { id: 'chic_neutral', name: '시크 & 도도 (무표정)', desc: '하이패션 런웨이 모델 특유의 시크한 무표정', prompt: 'Chic, cool, composed high-fashion neutral expression' },
+            { id: 'bright_laugh', name: '활짝 웃음 (해피/밝음)', desc: '치아가 살짝 보일 정도로 밝고 에너지 넘치는 웃음', prompt: 'Bright, joyful, radiant laughing expression full of happiness' },
+            { id: 'charisma_gaze', name: '강렬한 카리스마 눈빛', desc: '카메라를 깊이 있게 응시하는 매혹적이고 강렬한 표정', prompt: 'Intense, fierce, charismatic gaze piercing directly into the camera' },
+            { id: 'dreamy_emotional', name: '몽환적 & 아련한 감정', desc: '입술을 살짝 벌리고 우수에 찬 듯한 감성적인 무드', prompt: 'Dreamy, wistful, soft emotional expression with slightly parted lips' },
+            { id: 'playful_wink', name: '장난기 가득 & 윙크', desc: '상큼하고 위트 있는 윙크와 미소', prompt: 'Playful, cheeky wink with a charming lively smile' },
+            { id: 'confident_smirk', name: '자신감 넘치는 미소 (Smirk)', desc: '한쪽 입꼬리가 살짝 올라간 여유롭고 당당한 표정', prompt: 'Confident, subtle self-assured smirk radiating poise' },
+            { id: 'shy_blush', name: '수줍고 청초한 표정', desc: '맑고 순수하며 살짝 수줍어하는 듯한 표정', prompt: 'Gentle, innocent, slightly shy and bashful soft expression' },
+            { id: 'surprised_bright', name: '생기발랄 놀란 표정', desc: '눈을 동그랗게 뜨고 기분 좋게 놀란 생동감 있는 표정', prompt: 'Delighted, pleasantly surprised expression with bright wide eyes' },
+            { id: 'melancholy_mood', name: '차분하고 고독한 무드', desc: '가을/겨울 화보에 어울리는 깊이 있고 서정적인 감정', prompt: 'Calm, poetic, slightly melancholic and contemplative cinematic mood' },
+            { id: ' alluring_seductive', name: '고혹적 & 매혹적인 무드', desc: '세련되고 성숙한 분위기의 매혹적인 표정', prompt: 'Alluring, sophisticated, glamorous and captivating expression' },
+            { id: 'fresh_energetic', name: '상큼 과즙미 (청량함)', desc: '광고 모델처럼 상쾌하고 활기찬 에너지', prompt: 'Fresh, vibrant, Youthful energetic expression glowing with vitality' }
+        ];
+
+        // Application State
+        const state = {
+            aspectRatio: '3:4',
+            inputs: {
+                person: { base64: null, mimeType: null },
+                garment: { base64: null, mimeType: null },
+                pose: { base64: null, mimeType: null },
+                background: { base64: null, mimeType: null }
+            },
+            selectedShot: CAMERA_SHOTS[0],
+            selectedAngle: CAMERA_ANGLES[0],
+            selectedPose: POSES[0],
+            selectedExpr: EXPRESSIONS[0],
+            currentImage: null, // { dataUrl, base64, mimeType, meta }
+            history: [] // Array of generated items
+        };
+
+        function initApp() {
+            renderOptionGrids();
+            updateRecipeTags();
+            lucide.createIcons();
+        }
+
+        function renderOptionGrids() {
+            // Render Camera Shots
+            const shotGrid = document.getElementById('grid-shot');
+            shotGrid.innerHTML = CAMERA_SHOTS.map(item => `
+                <button onclick="selectOption('shot', '${item.id}')" id="opt-shot-${item.id}"
+                    class="text-left p-2.5 rounded-xl border border-zinc-800 bg-studio-850 hover:border-zinc-600 transition flex flex-col justify-between ${state.selectedShot.id === item.id ? 'chip-active' : ''}">
+                    <div class="font-semibold text-xs mb-0.5">${item.name}</div>
+                    <div class="text-[10px] opacity-80 leading-snug">${item.desc}</div>
+                </button>
+            `).join('');
+
+            // Render Camera Angles
+            const angleGrid = document.getElementById('grid-angle');
+            angleGrid.innerHTML = CAMERA_ANGLES.map(item => `
+                <button onclick="selectOption('angle', '${item.id}')" id="opt-angle-${item.id}"
+                    class="text-left p-2.5 rounded-xl border border-zinc-800 bg-studio-850 hover:border-zinc-600 transition flex flex-col justify-between ${state.selectedAngle.id === item.id ? 'chip-active' : ''}">
+                    <div class="font-semibold text-xs mb-0.5">${item.name}</div>
+                    <div class="text-[10px] opacity-80 leading-snug">${item.desc}</div>
+                </button>
+            `).join('');
+
+            // Render Poses
+            const poseGrid = document.getElementById('grid-pose');
+            poseGrid.innerHTML = POSES.map(item => `
+                <button onclick="selectOption('pose', '${item.id}')" id="opt-pose-${item.id}"
+                    class="text-left p-2.5 rounded-xl border border-zinc-800 bg-studio-850 hover:border-zinc-600 transition flex flex-col justify-between ${state.selectedPose.id === item.id ? 'chip-active' : ''}">
+                    <div class="font-semibold text-xs mb-0.5">${item.name}</div>
+                    <div class="text-[10px] opacity-80 leading-snug">${item.desc}</div>
+                </button>
+            `).join('');
+
+            // Render Expressions
+            const exprGrid = document.getElementById('grid-expr');
+            exprGrid.innerHTML = EXPRESSIONS.map(item => `
+                <button onclick="selectOption('expr', '${item.id}')" id="opt-expr-${item.id}"
+                    class="text-left p-2.5 rounded-xl border border-zinc-800 bg-studio-850 hover:border-zinc-600 transition flex flex-col justify-between ${state.selectedExpr.id === item.id ? 'chip-active' : ''}">
+                    <div class="font-semibold text-xs mb-0.5">${item.name}</div>
+                    <div class="text-[10px] opacity-80 leading-snug">${item.desc}</div>
+                </button>
+            `).join('');
+        }
+
+        function selectOption(category, id) {
+            if (category === 'shot') {
+                state.selectedShot = CAMERA_SHOTS.find(x => x.id === id);
+            } else if (category === 'angle') {
+                state.selectedAngle = CAMERA_ANGLES.find(x => x.id === id);
+            } else if (category === 'pose') {
+                state.selectedPose = POSES.find(x => x.id === id);
+            } else if (category === 'expr') {
+                state.selectedExpr = EXPRESSIONS.find(x => x.id === id);
+            }
+            renderOptionGrids();
+            updateRecipeTags();
+        }
+
+        function updateRecipeTags() {
+            document.getElementById('tag-shot').textContent = `범위: ${state.selectedShot.name}`;
+            document.getElementById('tag-angle').textContent = `각도: ${state.selectedAngle.name}`;
+            document.getElementById('tag-pose').textContent = `포즈: ${state.selectedPose.name}`;
+            document.getElementById('tag-expr').textContent = `표정: ${state.selectedExpr.name}`;
+        }
+
+        function switchDirectorTab(tab) {
+            const tabs = ['shot', 'angle', 'pose', 'expr'];
+            tabs.forEach(t => {
+                const panel = document.getElementById(`panel-${t}`);
+                const btn = document.getElementById(`tab-btn-${t}`);
+                if (t === tab) {
+                    panel.classList.remove('hidden');
+                    btn.className = 'director-tab-btn py-2 px-1 rounded-lg text-xs font-semibold bg-purple-600 text-white transition flex flex-col items-center gap-1 shadow';
+                } else {
+                    panel.classList.add('hidden');
+                    btn.className = 'director-tab-btn py-2 px-1 rounded-lg text-xs font-semibold text-zinc-400 hover:text-white transition flex flex-col items-center gap-1';
+                }
+            });
+        }
+
+        function randomizeDirectorOptions() {
+            state.selectedShot = CAMERA_SHOTS[Math.floor(Math.random() * CAMERA_SHOTS.length)];
+            state.selectedAngle = CAMERA_ANGLES[Math.floor(Math.random() * CAMERA_ANGLES.length)];
+            state.selectedPose = POSES[Math.floor(Math.random() * POSES.length)];
+            state.selectedExpr = EXPRESSIONS[Math.floor(Math.random() * EXPRESSIONS.length)];
+            renderOptionGrids();
+            updateRecipeTags();
+            showToast('새로운 카메라 범위, 각도, 포즈, 표정 조합이 선택되었습니다!', 'info');
+        }
+
+        function setAspectRatio(ratio) {
+            state.aspectRatio = ratio;
+            ['3:4', '1:1', '9:16', '16:9'].forEach(r => {
+                const btn = document.getElementById(`ratio-${r}`);
+                if (r === ratio) {
+                    btn.className = 'ratio-btn px-2.5 py-1 rounded-md font-medium bg-purple-600 text-white transition';
+                } else {
+                    btn.className = 'ratio-btn px-2.5 py-1 rounded-md font-medium text-zinc-400 hover:text-white transition';
+                }
+            });
+        }
+
+        function handleFileUpload(event, slot) {
+            const file = event.target.files?.[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const dataUrl = e.target.result;
+                const matches = dataUrl.match(/^data:(.+);base64,(.+)$/);
+                if (matches) {
+                    state.inputs[slot] = {
+                        mimeType: matches[1],
+                        base64: matches[2],
+                        dataUrl: dataUrl
+                    };
+                    const previewImg = document.getElementById(`preview-${slot}`);
+                    const placeholder = document.getElementById(`placeholder-${slot}`);
+                    const clearBtn = document.getElementById(`clear-${slot}`);
+
+                    previewImg.src = dataUrl;
+                    previewImg.classList.remove('hidden');
+                    placeholder.classList.add('hidden');
+                    clearBtn.classList.remove('hidden');
+                    updateInputCount();
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function clearSlot(slot) {
+            state.inputs[slot] = { base64: null, mimeType: null, dataUrl: null };
+            const previewImg = document.getElementById(`preview-${slot}`);
+            const placeholder = document.getElementById(`placeholder-${slot}`);
+            const clearBtn = document.getElementById(`clear-${slot}`);
+            const descInput = document.getElementById(`desc-${slot}`);
+
+            previewImg.src = '';
+            previewImg.classList.add('hidden');
+            placeholder.classList.remove('hidden');
+            clearBtn.classList.add('hidden');
+            descInput.value = '';
+            updateInputCount();
+        }
+
+        function resetAllInputs() {
+            ['person', 'garment', 'pose', 'background'].forEach(slot => clearSlot(slot));
+            showToast('모든 입력 슬롯이 초기화되었습니다.', 'info');
+        }
+
+        function updateInputCount() {
+            let count = 0;
+            ['person', 'garment', 'pose', 'background'].forEach(slot => {
+                const hasImg = !!state.inputs[slot].base64;
+                const hasText = document.getElementById(`desc-${slot}`).value.trim().length > 0;
+                const card = document.getElementById(`card-${slot}`);
+                if (hasImg || hasText) {
+                    count++;
+                    card.classList.add('border-purple-500/50');
+                } else {
+                    card.classList.remove('border-purple-500/50');
+                }
+            });
+            document.getElementById('active-input-count').textContent = `${count}/4 입력됨`;
+            return count;
+        }
+
+        function loadSamplePresets() {
+            document.getElementById('desc-person').value = '20대 중반 세련된 한국인 패션 모델, 자연스러운 흑발 시스루 뱅 헤어스타일';
+            document.getElementById('desc-garment').value = '크롭 기장의 트위드 자켓(블랙&화이트 체크 골드버튼)과 하이웨스트 와이드 데님 팬츠, 미니 크로스백';
+            document.getElementById('desc-pose').value = '한 손을 주머니에 넣고 자연스럽게 카메라를 바라보며 서 있는 화보 포즈';
+            document.getElementById('desc-background').value = '햇살이 은은하게 들어오는 모던한 서울 성수동 통유리 갤러리 카페 내부';
+            updateInputCount();
+            showToast('샘플 인물, 의상, 포즈, 배경 정보가 자동으로 채워졌습니다. [Try-On 합성하기]를 눌러보세요!', 'success');
+        }
+
+        async function fetchWithRetry(url, options, maxRetries = 4) {
+            let delay = 1000;
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (response.ok) {
+                        return await response.json();
+                    }
+                    if (attempt === maxRetries) {
+                        const errText = await response.text();
+                        throw new Error(`API 요청 실패 (${response.status}): ${errText}`);
+                    }
+                } catch (err) {
+                    if (attempt === maxRetries) throw err;
+                }
+                await new Promise(r => setTimeout(r, delay));
+                delay *= 2;
+            }
+        }
+
+        async function runSynthesis(mode = 'initial') {
+            const activeCount = updateInputCount();
+            const lockConsistency = document.getElementById('lock-consistency').checked;
+
+            if (activeCount === 0 && !state.currentImage) {
+                showToast('인물, 의상, 포즈, 배경 중 최소 1개 이상의 이미지나 설명을 입력해주세요!', 'error');
+                return;
+            }
+
+            // UI Loading state
+            const loadingOverlay = document.getElementById('stage-loading');
+            const loadingTitle = document.getElementById('loading-title');
+            const loadingSub = document.getElementById('loading-subtitle');
+            const statusBadge = document.getElementById('current-status-badge');
+            const btnSynthesize = document.getElementById('btn-synthesize');
+            const btnReshoot = document.getElementById('btn-reshoot');
+
+            loadingOverlay.classList.remove('hidden');
+            btnSynthesize.disabled = true;
+            btnReshoot.disabled = true;
+            statusBadge.textContent = 'AI 합성 진행 중...';
+            statusBadge.className = 'text-[11px] px-2 py-0.5 rounded-md bg-purple-600/30 text-purple-300 border border-purple-500/40 animate-pulse';
+
+            if (mode === 'initial') {
+                loadingTitle.textContent = '입력된 재료로 Virtual Try-On 합성 중...';
+                loadingSub.textContent = '인물, 의상, 포즈, 배경 데이터를 결합하여 고화질 피팅 이미지를 생성하고 있습니다.';
+            } else {
+                loadingTitle.textContent = `[${state.selectedShot.name} · ${state.selectedAngle.name}] 재촬영 중...`;
+                loadingSub.textContent = `포즈(${state.selectedPose.name})와 표정(${state.selectedExpr.name})을 적용하여 일관된 모델/의상을 합성합니다.`;
+            }
+
+            try {
+                const parts = [];
+                const instructions = [];
+
+                instructions.push(
+                    "You are an expert AI Virtual Try-On & Fashion Photography Director.",
+                    "Synthesize a single, photorealistic, high-resolution fashion photograph strictly based ONLY on the provided inputs below.",
+                    "Do NOT invent random unrelated props or change the core identity/garment design."
+                );
+
+                // If reshooting with consistency locked and we have a previous synthesized image, pass it as base reference
+                if (mode === 'reshoot' && lockConsistency && state.currentImage) {
+                    parts.push({
+                        text: "REFERENCE BASE IMAGE (Keep the exact same person identity, facial features, hairstyle, exact garment design/colors/textures, and background environment from this image):"
+                    });
+                    parts.push({
+                        inlineData: {
+                            mimeType: state.currentImage.mimeType,
+                            data: state.currentImage.base64
+                        }
+                    });
+                }
+
+                // 1. Person Input
+                const personDesc = document.getElementById('desc-person').value.trim();
+                if (state.inputs.person.base64) {
+                    parts.push({ text: "INPUT 1 - PERSON / MODEL IDENTITY (Preserve this exact person's face, body proportions, skin tone, and hair):" });
+                    parts.push({
+                        inlineData: {
+                            mimeType: state.inputs.person.mimeType,
+                            data: state.inputs.person.base64
+                        }
+                    });
+                }
+                if (personDesc) {
+                    instructions.push(`- PERSON DETAILS: ${personDesc}`);
+                }
+
+                // 2. Garment Input
+                const garmentDesc = document.getElementById('desc-garment').value.trim();
+                if (state.inputs.garment.base64) {
+                    parts.push({ text: "INPUT 2 - GARMENT / OUTFIT TO TRY ON (Dress the person in this exact clothing item, preserving fabric texture, color, cut, buttons, and logos accurately):" });
+                    parts.push({
+                        inlineData: {
+                            mimeType: state.inputs.garment.mimeType,
+                            data: state.inputs.garment.base64
+                        }
+                    });
+                }
+                if (garmentDesc) {
+                    instructions.push(`- OUTFIT / GARMENT TO WEAR: ${garmentDesc}`);
+                }
+
+                // 3. Pose Input
+                const poseDesc = document.getElementById('desc-pose').value.trim();
+                if (mode === 'initial' && state.inputs.pose.base64) {
+                    parts.push({ text: "INPUT 3 - POSE REFERENCE (Make the person adopt this exact body posture and gesture):" });
+                    parts.push({
+                        inlineData: {
+                            mimeType: state.inputs.pose.mimeType,
+                            data: state.inputs.pose.base64
+                        }
+                    });
+                }
+                if (mode === 'initial' && poseDesc) {
+                    instructions.push(`- INITIAL POSE ACTION: ${poseDesc}`);
+                }
+
+                // 4. Background Input
+                const bgDesc = document.getElementById('desc-background').value.trim();
+                if (state.inputs.background.base64) {
+                    parts.push({ text: "INPUT 4 - BACKGROUND ENVIRONMENT (Place the subject naturally into this exact background with matching lighting and shadows):" });
+                    parts.push({
+                        inlineData: {
+                            mimeType: state.inputs.background.mimeType,
+                            data: state.inputs.background.base64
+                        }
+                    });
+                } else if (bgDesc) {
+                    instructions.push(`- BACKGROUND SETTING: ${bgDesc}`);
+                } else if (!state.currentImage) {
+                    instructions.push(`- BACKGROUND SETTING: Clean, neutral minimalist photography studio backdrop with soft natural lighting.`);
+                }
+
+                // Camera & Pose Director Specifications
+                instructions.push(
+                    "--- CAMERA & POSE DIRECTION TO APPLY ---",
+                    `- CAMERA FRAMING / RANGE: ${state.selectedShot.prompt} (${state.selectedShot.name})`,
+                    `- CAMERA ANGLE: ${state.selectedAngle.prompt} (${state.selectedAngle.name})`,
+                    `- BODY POSE & ACTION: ${mode === 'initial' && (state.inputs.pose.base64 || poseDesc) ? (poseDesc || 'Follow the uploaded Pose Reference image') + `, blended naturally with ${state.selectedPose.prompt}` : state.selectedPose.prompt}`,
+                    `- FACIAL EXPRESSION & EMOTION: ${state.selectedExpr.prompt} (${state.selectedExpr.name})`
+                );
+
+                const customNote = document.getElementById('custom-director-note').value.trim();
+                if (customNote) {
+                    instructions.push(`- ADDITIONAL STYLING DIRECTION: ${customNote}`);
+                }
+
+                instructions.push("Output a crisp, high-fashion editorial quality photograph with realistic fabric folds and natural lighting integration.");
+
+                const finalPromptText = instructions.join('\n');
+                parts.push({ text: finalPromptText });
+
+                const payload = {
+                    contents: [{
+                        role: 'user',
+                        parts: parts
+                    }],
+                    generationConfig: {
+                        responseModalities: ['IMAGE'],
+                        imageConfig: {
+                            aspectRatio: state.aspectRatio
+                        }
+                    }
+                };
+
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent?key=${apiKey}`;
+                const result = await fetchWithRetry(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const imagePart = result?.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+                if (!imagePart || !imagePart.inlineData?.data) {
+                    throw new Error('모델이 이미지를 반환하지 않았습니다. 입력 설명을 조금 더 구체적으로 작성해 주세요.');
+                }
+
+                const mimeType = imagePart.inlineData.mimeType || 'image/png';
+                const base64Data = imagePart.inlineData.data;
+                const dataUrl = `data:${mimeType};base64,${base64Data}`;
+
+                const newRecord = {
+                    id: 'tryon_' + Date.now(),
+                    timestamp: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                    dataUrl: dataUrl,
+                    base64: base64Data,
+                    mimeType: mimeType,
+                    shot: state.selectedShot.name,
+                    angle: state.selectedAngle.name,
+                    pose: state.selectedPose.name,
+                    expr: state.selectedExpr.name,
+                    aspectRatio: state.aspectRatio
+                };
+
+                state.currentImage = newRecord;
+                state.history.unshift(newRecord);
+
+                displayResultOnStage(newRecord);
+                renderHistoryGallery();
+
+                statusBadge.textContent = '합성 완료';
+                statusBadge.className = 'text-[11px] px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+                showToast('Try-On 및 포즈 디렉팅 합성이 완료되어 히스토리에 저장되었습니다!', 'success');
+
+            } catch (error) {
+                console.error(error);
+                statusBadge.textContent = '오류 발생';
+                statusBadge.className = 'text-[11px] px-2 py-0.5 rounded-md bg-red-500/20 text-red-300 border border-red-500/30';
+                showToast(error.message || '이미지 합성 중 오류가 발생했습니다.', 'error');
+            } finally {
+                loadingOverlay.classList.add('hidden');
+                btnSynthesize.disabled = false;
+                btnReshoot.disabled = false;
+            }
+        }
+
+        function displayResultOnStage(record) {
+            const emptyEl = document.getElementById('stage-empty');
+            const imgEl = document.getElementById('stage-image');
+            const summaryEl = document.getElementById('last-prompt-summary');
+            const singleDownloadBtn = document.getElementById('btn-download-single');
+
+            emptyEl.classList.add('hidden');
+            imgEl.src = record.dataUrl;
+            imgEl.classList.remove('hidden');
+            singleDownloadBtn.disabled = false;
+
+            summaryEl.textContent = `[${record.timestamp}] ${record.shot} | ${record.angle} | ${record.pose} | ${record.expr}`;
+        }
+
+        function renderHistoryGallery() {
+            const listEl = document.getElementById('history-list');
+            const countBadge = document.getElementById('history-count-badge');
+            const zipBtn = document.getElementById('btn-download-zip');
+            const clearBtn = document.getElementById('btn-clear-history');
+
+            countBadge.textContent = `${state.history.length}장`;
+            zipBtn.disabled = state.history.length === 0;
+            clearBtn.disabled = state.history.length === 0;
+
+            if (state.history.length === 0) {
+                listEl.innerHTML = `
+                    <div id="history-empty" class="w-full py-6 text-center text-xs text-zinc-500 border border-dashed border-zinc-800 rounded-xl">
+                        합성하거나 포즈를 변경한 모든 결과물이 이곳에 자동으로 저장됩니다.
+                    </div>
+                `;
+                return;
+            }
+
+            listEl.innerHTML = state.history.map((item, idx) => {
+                const isSelected = state.currentImage && state.currentImage.id === item.id;
+                return `
+                    <div class="relative group shrink-0 w-24 rounded-xl overflow-hidden bg-zinc-950 border-2 ${isSelected ? 'border-purple-500 shadow-lg shadow-purple-500/20' : 'border-zinc-800 hover:border-zinc-600'} transition cursor-pointer"
+                         onclick="selectHistoryItem('${item.id}')">
+                        <div class="h-24 w-full overflow-hidden bg-zinc-900">
+                            <img src="${item.dataUrl}" class="w-full h-full object-cover group-hover:scale-105 transition duration-200" alt="히스토리 ${idx + 1}">
+                        </div>
+                        <div class="p-1.5 bg-zinc-950/95 text-[10px] leading-tight">
+                            <div class="font-semibold text-zinc-200 truncate">${item.pose}</div>
+                            <div class="text-zinc-400 truncate">${item.shot.split(' ')[0]} · ${item.expr.split(' ')[0]}</div>
+                        </div>
+                        <button onclick="event.stopPropagation(); deleteHistoryItem('${item.id}')" 
+                                class="opacity-0 group-hover:opacity-100 absolute top-1 right-1 w-5 h-5 rounded-full bg-black/75 hover:bg-red-600 text-white flex items-center justify-center transition"
+                                title="삭제">
+                            <i data-lucide="x" class="w-3 h-3"></i>
+                        </button>
+                    </div>
+                `;
+            }).join('');
+
+            lucide.createIcons();
+        }
+
+        function selectHistoryItem(id) {
+            const found = state.history.find(item => item.id === id);
+            if (!found) return;
+            state.currentImage = found;
+            displayResultOnStage(found);
+            renderHistoryGallery();
+        }
+
+        function deleteHistoryItem(id) {
+            state.history = state.history.filter(item => item.id !== id);
+            if (state.currentImage && state.currentImage.id === id) {
+                state.currentImage = state.history[0] || null;
+                if (state.currentImage) {
+                    displayResultOnStage(state.currentImage);
+                } else {
+                    document.getElementById('stage-image').classList.add('hidden');
+                    document.getElementById('stage-empty').classList.remove('hidden');
+                    document.getElementById('btn-download-single').disabled = true;
+                }
+            }
+            renderHistoryGallery();
+            showToast('선택한 히스토리 이미지가 삭제되었습니다.', 'info');
+        }
+
+        function clearHistory() {
+            state.history = [];
+            state.currentImage = null;
+            document.getElementById('stage-image').classList.add('hidden');
+            document.getElementById('stage-empty').classList.remove('hidden');
+            document.getElementById('btn-download-single').disabled = true;
+            document.getElementById('last-prompt-summary').textContent = '아직 생성된 작업이 없습니다.';
+            renderHistoryGallery();
+            showToast('히스토리 보관함이 모두 비워졌습니다.', 'info');
+        }
+
+        function downloadCurrentImage() {
+            if (!state.currentImage) return;
+            const link = document.createElement('a');
+            const safePose = state.currentImage.pose.replace(/[^a-zA-Z0-9가-힣]/g, '_');
+            link.download = `TryOn_${safePose}_${state.currentImage.id}.png`;
+            link.href = state.currentImage.dataUrl;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        async function downloadAllAsZip() {
+            if (state.history.length === 0) return;
+
+            const zipBtn = document.getElementById('btn-download-zip');
+            const originalHtml = zipBtn.innerHTML;
+            zipBtn.disabled = true;
+            zipBtn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>ZIP 압축 중...</span>`;
+            lucide.createIcons();
+
+            try {
+                const zip = new JSZip();
+                const folder = zip.folder("AI_TryOn_Lookbook");
+
+                // Add metadata summary text file
+                let metadataLog = "=== AI Virtual Try-On & Pose Director Studio History ===\n\n";
+
+                state.history.forEach((item, index) => {
+                    const num = String(state.history.length - index).padStart(2, '0');
+                    const ext = item.mimeType.includes('jpeg') ? 'jpg' : 'png';
+                    const cleanShot = item.shot.split(' ')[0].replace(/[^a-zA-Z0-9가-힣]/g, '');
+                    const cleanPose = item.pose.split(' ')[0].replace(/[^a-zA-Z0-9가-힣]/g, '');
+                    const cleanExpr = item.expr.split(' ')[0].replace(/[^a-zA-Z0-9가-힣]/g, '');
+                    const filename = `${num}_TryOn_${cleanShot}_${cleanPose}_${cleanExpr}.${ext}`;
+
+                    folder.file(filename, item.base64, { base64: true });
+
+                    metadataLog += `[#${num}] 파일명: ${filename}\n`;
+                    metadataLog += `- 생성시간: ${item.timestamp}\n`;
+                    metadataLog += `- 카메라 범위: ${item.shot}\n`;
+                    metadataLog += `- 카메라 각도: ${item.angle}\n`;
+                    metadataLog += `- 포즈 동작: ${item.pose}\n`;
+                    metadataLog += `- 표정/감정: ${item.expr}\n`;
+                    metadataLog += `- 화면 비율: ${item.aspectRatio}\n\n`;
+                });
+
+                folder.file("shooting_info.txt", metadataLog);
+
+                const blob = await zip.generateAsync({ type: "blob" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                const dateStr = new Date().toISOString().slice(0, 10);
+                a.href = url;
+                a.download = `AI_TryOn_History_${dateStr}_${state.history.length}ea.zip`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                showToast(`총 ${state.history.length}장의 이미지가 ZIP 파일로 일괄 다운로드되었습니다!`, 'success');
+            } catch (err) {
+                console.error(err);
+                showToast('ZIP 파일 생성 중 오류가 발생했습니다.', 'error');
+            } finally {
+                zipBtn.disabled = false;
+                zipBtn.innerHTML = originalHtml;
+                lucide.createIcons();
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            let colorClasses = 'bg-zinc-900 border-zinc-700 text-zinc-100';
+            let iconName = 'info';
+            if (type === 'success') {
+                colorClasses = 'bg-emerald-950/95 border-emerald-500/50 text-emerald-100';
+                iconName = 'check-circle-2';
+            } else if (type === 'error') {
+                colorClasses = 'bg-red-950/95 border-red-500/50 text-red-100';
+                iconName = 'alert-circle';
+            }
+
+            toast.className = `pointer-events-auto flex items-start gap-2.5 p-3.5 rounded-xl border shadow-2xl backdrop-blur-md text-xs transition-all duration-300 ${colorClasses}`;
+            toast.innerHTML = `
+                <i data-lucide="${iconName}" class="w-4 h-4 shrink-0 mt-0.5"></i>
+                <div class="flex-1 leading-relaxed font-medium">${message}</div>
+            `;
+
+            container.appendChild(toast);
+            lucide.createIcons();
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(8px)';
+                setTimeout(() => toast.remove(), 300);
+            }, 3800);
+        }
+
+        window.onload = initApp;
+    </script>
+</body>
+</html>
